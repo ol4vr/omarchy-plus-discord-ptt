@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.ol4vr.discord-ptt",
+  "name": "Discord PTT",
+  "version": "0.1.0",
+  "author": "Olav Rorvik",
+  "license": "MIT",
+  "homepage": "https://github.com/ol4vr/omarchy-plus-discord-ptt",
+  "description": "System-wide Caps Lock push-to-talk for Discord Web with a persistent Omarchy indicator toggle.",
+  "kinds": [
+    "service"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml"
+  }
+}

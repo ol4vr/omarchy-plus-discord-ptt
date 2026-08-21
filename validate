@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+
+for command in jq bash; do
+  command -v "$command" >/dev/null 2>&1 || {
+    printf 'ERROR: required command not found: %s\n' "$command" >&2
+    exit 1
+  }
+done
+
+jq -e '
+  .schemaVersion == 1
+  and .id == "io.github.ol4vr.discord-ptt"
+  and .version == "0.1.0"
+  and (.kinds == ["service"])
+  and .keepLoaded == true
+  and .entryPoints.service == "Service.qml"
+' "$repo_dir/manifest.json" >/dev/null
+
+bash -n "$repo_dir/omarchy-plus-discord-ptt"
+
+if command -v qmllint >/dev/null 2>&1; then
+  shell_root=${OMARCHY_PATH:-/usr/share/omarchy}/shell
+  qmllint -I "$shell_root" \
+    "$repo_dir/Service.qml" \
+    "$repo_dir/PttMode.qml"
+fi
+
+if command -v omarchy >/dev/null 2>&1; then
+  omarchy plugin validate "$repo_dir"
+fi
+
+printf 'Discord PTT plugin validation: PASS\n'

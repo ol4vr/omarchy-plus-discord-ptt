@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+state_home="${XDG_STATE_HOME:-${HOME}/.local/state}"
+state_dir="${state_home}/omarchy-plus/discord-ptt"
+state_file="${state_dir}/enabled"
+audio_source='@DEFAULT_AUDIO_SOURCE@'
+
+usage() {
+  printf 'Usage: %s {enable|disable|toggle|press|release|status|reconcile|reset}\n' "${0##*/}" >&2
+  exit 64
+}
+
+set_microphone_mute() {
+  local mute_state="$1"
+  local wpctl_bin
+
+  wpctl_bin=$(command -v wpctl) || {
+    printf 'ERROR: wpctl is unavailable\n' >&2
+    return 127
+  }
+
+  "$wpctl_bin" set-mute "$audio_source" "$mute_state"
+}
+
+mode_enabled() {
+  [[ -f "$state_file" ]]
+}
+
+enable_mode() {
+  install -d -m 0700 "$state_dir"
+  umask 077
+  : > "$state_file"
+
+  if ! set_microphone_mute 1; then
+    rm -f "$state_file"
+    return 1
+  fi
+
+  printf 'enabled\n'
+}
+
+disable_mode() {
+  rm -f "$state_file"
+  set_microphone_mute 0
+  printf 'disabled\n'
+}
+
+case "${1:-}" in
+  enable)
+    enable_mode
+    ;;
+  disable)
+    disable_mode
+    ;;
+  toggle)
+    if mode_enabled; then
+      disable_mode
+    else
+      enable_mode
+    fi
+    ;;
+  press)
+    if mode_enabled; then
+      set_microphone_mute 0
+    fi
+    ;;
+  release)
+    if mode_enabled; then
+      set_microphone_mute 1
+    fi
+    ;;
+  status)
+    if mode_enabled; then
+      printf 'enabled\n'
+      exit 0
+    fi
+    printf 'disabled\n'
+    exit 1
+    ;;
+  reconcile)
+    if mode_enabled; then
+      set_microphone_mute 1
+      printf 'enabled\n'
+    else
+      set_microphone_mute 0
+      printf 'disabled\n'
+    fi
+    ;;
+  reset)
+    disable_mode
+    ;;
+  *)
+    usage
+    ;;
+esac
