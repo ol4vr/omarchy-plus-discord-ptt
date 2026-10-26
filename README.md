@@ -24,6 +24,12 @@ is stored with mode `0600` beneath:
 ${XDG_STATE_HOME:-~/.local/state}/omarchy-plus/discord-ptt/enabled
 ```
 
+Input-management companions must use the versioned `authority-v1` contract.
+The helper serializes every mode transition and Caps Lock press/release beneath
+`${XDG_RUNTIME_DIR}/omarchy-plus-discord-ptt/authority.lock`. A companion may
+change capture state only while holding that same lock and after verifying PTT
+is disabled. Missing or malformed authority state is fail-closed.
+
 `Service.qml` reconciles the saved state whenever the Omarchy shell loads the
 plugin. The helper controls only PipeWire's current default audio source through
 `wpctl`; it does not target Discord's process or alter per-application streams.

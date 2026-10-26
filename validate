@@ -13,13 +13,14 @@ done
 jq -e '
   .schemaVersion == 1
   and .id == "io.github.ol4vr.discord-ptt"
-  and .version == "0.1.0"
+  and .version == "0.2.0-candidate.1"
   and (.kinds == ["service"])
   and .keepLoaded == true
   and .entryPoints.service == "Service.qml"
 ' "$repo_dir/manifest.json" >/dev/null
 
 bash -n "$repo_dir/omarchy-plus-discord-ptt"
+"$repo_dir/test/authority-lock"
 
 if command -v qmllint >/dev/null 2>&1; then
   shell_root=${OMARCHY_PATH:-/usr/share/omarchy}/shell

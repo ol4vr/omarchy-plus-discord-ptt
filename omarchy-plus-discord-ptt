@@ -4,6 +4,10 @@ set -euo pipefail
 state_home="${XDG_STATE_HOME:-${HOME}/.local/state}"
 state_dir="${state_home}/omarchy-plus/discord-ptt"
 state_file="${state_dir}/enabled"
+contract_file="${state_dir}/authority-v1"
+runtime_home="${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR is required}"
+authority_dir="${runtime_home}/omarchy-plus-discord-ptt"
+authority_lock="${authority_dir}/authority.lock"
 audio_source='@DEFAULT_AUDIO_SOURCE@'
 
 usage() {
@@ -23,17 +27,77 @@ set_microphone_mute() {
   "$wpctl_bin" set-mute "$audio_source" "$mute_state"
 }
 
+prepare_authority() {
+  install -d -m 0700 "$state_dir" "$authority_dir"
+  [[ ! -L "$state_dir" && ! -L "$authority_dir" ]] || {
+    printf 'ERROR: Discord PTT authority directory is unsafe\n' >&2
+    return 1
+  }
+  [[ $(stat -c '%u' "$state_dir") == "$EUID" && $(stat -c '%u' "$authority_dir") == "$EUID" ]] || {
+    printf 'ERROR: Discord PTT authority directory has the wrong owner\n' >&2
+    return 1
+  }
+  [[ $((8#$(stat -c '%a' "$state_dir") & 077)) == 0
+    && $((8#$(stat -c '%a' "$authority_dir") & 077)) == 0 ]] || {
+    printf 'ERROR: Discord PTT authority directory is not private\n' >&2
+    return 1
+  }
+  umask 077
+  exec {authority_fd}>"$authority_lock"
+  [[ -f "$authority_lock" && ! -L "$authority_lock"
+    && $(stat -c '%u' "$authority_lock") == "$EUID"
+    && $(stat -c '%h' "$authority_lock") == 1 ]] || {
+    printf 'ERROR: Discord PTT authority lock is unsafe\n' >&2
+    return 1
+  }
+  chmod 0600 "$authority_lock"
+  flock -w 5 "$authority_fd" || {
+    printf 'ERROR: Discord PTT authority is busy\n' >&2
+    return 1
+  }
+}
+
+write_contract() {
+  local temporary="${contract_file}.tmp.$$"
+  printf 'shared-lock-v1\n' > "$temporary"
+  chmod 0600 "$temporary"
+  mv -fT -- "$temporary" "$contract_file"
+}
+
+require_contract() {
+  [[ -f "$contract_file" && ! -L "$contract_file"
+    && $(stat -c '%u' "$contract_file") == "$EUID"
+    && $(stat -c '%h' "$contract_file") == 1
+    && $(stat -c '%a' "$contract_file") == 600
+    && $(cat -- "$contract_file") == shared-lock-v1 ]] || {
+    printf 'ERROR: Discord PTT authority contract is unavailable\n' >&2
+    return 1
+  }
+}
+
 mode_enabled() {
-  [[ -f "$state_file" ]]
+  if [[ ! -e "$state_file" && ! -L "$state_file" ]]; then
+    return 1
+  fi
+  [[ -f "$state_file" && ! -L "$state_file"
+    && $(stat -c '%u' "$state_file") == "$EUID"
+    && $(stat -c '%h' "$state_file") == 1
+    && $(stat -c '%a' "$state_file") == 600
+    && ! -s "$state_file" ]] || {
+    printf 'ERROR: Discord PTT state marker is unsafe\n' >&2
+    return 2
+  }
 }
 
 enable_mode() {
-  install -d -m 0700 "$state_dir"
-  umask 077
-  : > "$state_file"
+  local temporary="${state_file}.tmp.$$"
+  write_contract
+  : > "$temporary"
+  chmod 0600 "$temporary"
+  mv -fT -- "$temporary" "$state_file"
 
   if ! set_microphone_mute 1; then
-    rm -f "$state_file"
+    rm -f -- "$state_file"
     return 1
   fi
 
@@ -41,10 +105,18 @@ enable_mode() {
 }
 
 disable_mode() {
-  rm -f "$state_file"
+  write_contract
+  if mode_enabled; then
+    rm -f -- "$state_file"
+  else
+    status=$?
+    [[ $status == 1 ]] || return "$status"
+  fi
   set_microphone_mute 0
   printf 'disabled\n'
 }
+
+prepare_authority
 
 case "${1:-}" in
   enable)
@@ -57,32 +129,49 @@ case "${1:-}" in
     if mode_enabled; then
       disable_mode
     else
+      status=$?
+      [[ $status == 1 ]] || exit "$status"
       enable_mode
     fi
     ;;
   press)
+    require_contract
     if mode_enabled; then
       set_microphone_mute 0
+    else
+      status=$?
+      [[ $status == 1 ]] || exit "$status"
     fi
     ;;
   release)
+    require_contract
     if mode_enabled; then
       set_microphone_mute 1
+    else
+      status=$?
+      [[ $status == 1 ]] || exit "$status"
     fi
     ;;
   status)
+    require_contract
     if mode_enabled; then
       printf 'enabled\n'
       exit 0
+    else
+      status=$?
+      [[ $status == 1 ]] || exit "$status"
+      printf 'disabled\n'
+      exit 1
     fi
-    printf 'disabled\n'
-    exit 1
     ;;
   reconcile)
+    write_contract
     if mode_enabled; then
       set_microphone_mute 1
       printf 'enabled\n'
     else
+      status=$?
+      [[ $status == 1 ]] || exit "$status"
       set_microphone_mute 0
       printf 'disabled\n'
     fi

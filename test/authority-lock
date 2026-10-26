@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+temporary=$(mktemp -d)
+trap 'rm -rf -- "$temporary"' EXIT
+mkdir -p "$temporary/bin" "$temporary/run" "$temporary/state"
+
+cat > "$temporary/bin/wpctl" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$PTT_TEST_LOG"
+EOF
+chmod 0755 "$temporary/bin/wpctl"
+
+export PATH="$temporary/bin:$PATH"
+export XDG_RUNTIME_DIR="$temporary/run"
+export XDG_STATE_HOME="$temporary/state"
+export PTT_TEST_LOG="$temporary/wpctl.log"
+
+"$repo_dir/omarchy-plus-discord-ptt" reconcile >/dev/null
+"$repo_dir/omarchy-plus-discord-ptt" status >/dev/null 2>&1 && exit 1 || status=$?
+[[ $status == 1 ]]
+[[ $(cat "$temporary/state/omarchy-plus/discord-ptt/authority-v1") == shared-lock-v1 ]]
+
+"$repo_dir/omarchy-plus-discord-ptt" enable >/dev/null
+"$repo_dir/omarchy-plus-discord-ptt" status >/dev/null
+"$repo_dir/omarchy-plus-discord-ptt" press
+"$repo_dir/omarchy-plus-discord-ptt" release
+"$repo_dir/omarchy-plus-discord-ptt" disable >/dev/null
+
+expected=$'set-mute @DEFAULT_AUDIO_SOURCE@ 0\nset-mute @DEFAULT_AUDIO_SOURCE@ 1\nset-mute @DEFAULT_AUDIO_SOURCE@ 0\nset-mute @DEFAULT_AUDIO_SOURCE@ 1\nset-mute @DEFAULT_AUDIO_SOURCE@ 0'
+[[ $(cat "$PTT_TEST_LOG") == "$expected" ]]
+[[ ! -e "$temporary/state/omarchy-plus/discord-ptt/enabled" ]]
+[[ $(stat -c '%a' "$temporary/state/omarchy-plus/discord-ptt/authority-v1") == 600 ]]
+
+printf 'unexpected\n' > "$temporary/state/omarchy-plus/discord-ptt/enabled"
+calls_before=$(wc -l < "$PTT_TEST_LOG")
+if "$repo_dir/omarchy-plus-discord-ptt" status >"$temporary/unsafe.out" 2>"$temporary/unsafe.err"; then
+  printf 'unsafe marker was accepted\n' >&2
+  exit 1
+fi
+grep -Fq 'state marker is unsafe' "$temporary/unsafe.err"
+[[ $(wc -l < "$PTT_TEST_LOG") == "$calls_before" ]]
+
+printf 'Discord PTT authority-lock tests: PASS\n'

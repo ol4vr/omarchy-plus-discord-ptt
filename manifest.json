@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.ol4vr.discord-ptt",
   "name": "Discord PTT",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "Olav Rorvik",
   "license": "MIT",
   "homepage": "https://github.com/ol4vr/omarchy-plus-discord-ptt",
